@@ -1,0 +1,77 @@
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+
+st.set_page_config(page_title="Delay Tracker", layout="wide")
+
+st.title("📊 Delay & Overdue Tracker")
+
+uploaded_file = st.file_uploader("Drag & drop your Excel file here", type=["xlsx"])
+
+if uploaded_file:
+    df = pd.read_excel(uploaded_file)
+
+    # Ensure date columns are datetime
+    date_cols = ["Created Date", "End Date", "Dev Date"]
+    for col in date_cols:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors='coerce')
+
+    today = pd.to_datetime(datetime.today().date())
+
+    def get_status(row):
+        # 1. Issue
+        if pd.isna(row.get("End Date")) and pd.notna(row.get("Created Date")):
+            if row["Created Date"] + pd.Timedelta(days=14) < today:
+                return "Issue"
+
+        # 2. Overdue
+        if row.get("Status") == "Develop" and pd.notna(row.get("End Date")):
+            if row["End Date"] < today:
+                return "Overdue"
+
+        # 3. Late
+        if row.get("Status") == "Develop" and pd.notna(row.get("Dev Date")):
+            if row["Dev Date"] < today:
+                return "Late"
+
+        # 4. Due Soon
+        if row.get("Status") == "Develop" and pd.notna(row.get("Dev Date")):
+            if 0 <= (row["Dev Date"] - today).days <= 3:
+                return "Due Soon"
+
+        # 5. On Time
+        if row.get("Status") == "Testing" and pd.notna(row.get("Dev Date")):
+            if row["Dev Date"] == today:
+                return "On Time"
+
+        return "On Track"
+
+    df["Delay Status"] = df.apply(get_status, axis=1)
+
+    # 🔢 Summary
+    st.subheader("Summary")
+    summary = df["Delay Status"].value_counts().reset_index()
+    summary.columns = ["Status", "Count"]
+    st.dataframe(summary)
+
+    # 🎯 Filter
+    status_filter = st.multiselect(
+        "Filter by Status",
+        options=df["Delay Status"].unique(),
+        default=df["Delay Status"].unique()
+    )
+
+    filtered_df = df[df["Delay Status"].isin(status_filter)]
+
+    # 📋 Table
+    st.subheader("Detailed View")
+    st.dataframe(filtered_df, use_container_width=True)
+
+    # 📥 Download
+    st.download_button(
+        "Download Updated File",
+        filtered_df.to_csv(index=False),
+        file_name="delay_result.csv",
+        mime="text/csv"
+    )
